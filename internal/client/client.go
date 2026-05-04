@@ -22,6 +22,7 @@ type Client struct {
 	passphrase   string
 	anthropicKey string
 	httpClient   *http.Client
+	llmClient    *http.Client
 }
 
 func New(cfg Config) *Client {
@@ -31,6 +32,9 @@ func New(cfg Config) *Client {
 		anthropicKey: cfg.AnthropicKey,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
+		},
+		llmClient: &http.Client{
+			Timeout: 60 * time.Second,
 		},
 	}
 }
@@ -130,7 +134,19 @@ func (c *Client) sendCreativeActionProxy(gmPrompt, userPrompt string) (map[strin
 		"system": gmPrompt,
 		"user":   userPrompt,
 	}
-	resp, err := c.postJSON("/api/gm", payload)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/gm", bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.passphrase != "" {
+		req.Header.Set("X-Player-ID", c.passphrase)
+	}
+	resp, err := c.llmClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +188,7 @@ func (c *Client) sendCreativeActionDirect(gmPrompt, userPrompt string) (map[stri
 	req.Header.Set("x-api-key", c.anthropicKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.llmClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

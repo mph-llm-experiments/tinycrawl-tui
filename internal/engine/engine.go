@@ -1765,10 +1765,10 @@ func Dispatch(state *types.GameState, action types.Action, cd types.ContentData)
 		newInv := make([]*types.Item, len(state.Character.Inventory))
 		copy(newInv, state.Character.Inventory)
 
-		// Find all slots occupied by the selected item
+		// Find all slots occupied by the selected item (match by ID for multi-slot items)
 		var itemSlots []int
 		for i, it := range newInv {
-			if it != nil && it == item {
+			if it != nil && it.ID == item.ID {
 				itemSlots = append(itemSlots, i)
 			}
 		}
@@ -1778,7 +1778,7 @@ func Dispatch(state *types.GameState, action types.Action, cd types.ContentData)
 		var displacedSlots []int
 		if displaced != nil {
 			for i, it := range newInv {
-				if it != nil && it == displaced {
+				if it != nil && it.ID == displaced.ID {
 					displacedSlots = append(displacedSlots, i)
 				}
 			}

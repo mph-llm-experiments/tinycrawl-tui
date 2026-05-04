@@ -81,11 +81,21 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newState := engine.Dispatch(&m.State, types.NewGame(msg.Seed), m.Content)
 		m.State = *newState
 		m.ActiveView = m.viewForPhase(m.State.Phase)
+		initCmd := m.ActiveView.Init()
+		return m, initCmd
 
 	case GameAction:
 		newState := engine.Dispatch(&m.State, msg.Action, m.Content)
 		m.State = *newState
 		m.ActiveView = m.viewForPhase(m.State.Phase)
+		initCmd := m.ActiveView.Init()
+		if initCmd != nil {
+			// Delegate update to the new view, then batch with init cmd
+			var viewCmd tea.Cmd
+			updated, viewCmd := m.ActiveView.Update(msg)
+			m.ActiveView = updated.(PhaseView)
+			return m, tea.Batch(initCmd, viewCmd)
+		}
 	}
 
 	if m.ActiveView != nil {

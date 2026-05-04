@@ -65,11 +65,11 @@ func (r *Rng) RollDice(count, sides int) int {
 	return total
 }
 
-// RollNotation parses dice notation and rolls. Panics on invalid notation.
+// RollNotation parses dice notation and rolls. Returns d4 result on invalid notation.
 func (r *Rng) RollNotation(notation string) int {
 	count, sides, err := ParseDice(notation)
 	if err != nil {
-		panic(err)
+		return r.RollDie(4)
 	}
 	return r.RollDice(count, sides)
 }
