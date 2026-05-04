@@ -16,6 +16,7 @@ type RoomView struct {
 	cd        types.ContentData
 	kitty     bool
 	inventory *InventoryView
+	mapView   *MapView
 }
 
 // NewRoomView creates a room exploration view.
@@ -30,6 +31,35 @@ func NewRoomView(state *types.GameState, cd types.ContentData, kitty bool) *Room
 func (v *RoomView) Init() tea.Cmd { return nil }
 
 func (v *RoomView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// If map is open, delegate to it
+	if v.mapView != nil {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "m", "esc":
+				v.mapView = nil
+				return v, nil
+			default:
+				dir := directionForMsg(msg.String())
+				if dir != "" && v.state.Expedition != nil {
+					v.mapView = nil
+					for i, exit := range v.state.Exits() {
+						if exit.Direction == dir {
+							idx := i
+							return v, func() tea.Msg {
+								return GameAction{Action: types.ChooseExit(idx)}
+							}
+						}
+					}
+					return v, nil
+				}
+			}
+		}
+		updated, cmd := v.mapView.Update(msg)
+		v.mapView = updated.(*MapView)
+		return v, cmd
+	}
+
 	// If inventory is open, delegate to it
 	if v.inventory != nil {
 		switch msg := msg.(type) {
@@ -55,6 +85,11 @@ func (v *RoomView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "m":
+			if v.state.Expedition != nil {
+				v.mapView = NewMapView(v.state.Expedition, v.state.Light)
+			}
+			return v, nil
 		case "i", "p":
 			if v.state.Character != nil {
 				v.inventory = NewInventoryView(v.state.Character)
@@ -96,6 +131,9 @@ func (v *RoomView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (v *RoomView) View() string {
+	if v.mapView != nil {
+		return v.mapView.View()
+	}
 	if v.inventory != nil {
 		return v.inventory.View()
 	}
@@ -227,6 +265,9 @@ func (v *RoomView) canRest() bool {
 }
 
 func (v *RoomView) KeyHints() []KeyHint {
+	if v.mapView != nil {
+		return v.mapView.KeyHints()
+	}
 	if v.inventory != nil {
 		return v.inventory.KeyHints()
 	}
@@ -246,6 +287,9 @@ func (v *RoomView) KeyHints() []KeyHint {
 		}
 	}
 	hints = append(hints, KeyHint{Key: "i", Desc: "inventory"})
+	if v.state.Expedition != nil {
+		hints = append(hints, KeyHint{Key: "m", Desc: "map"})
+	}
 	if v.canRest() {
 		hints = append(hints, KeyHint{Key: "z", Desc: "rest"})
 	}
