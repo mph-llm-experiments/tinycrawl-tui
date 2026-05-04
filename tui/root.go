@@ -56,7 +56,7 @@ func NewRootModel(cfg client.Config, packs []types.ContentPack, kitty bool) Root
 		Online:       online,
 		KittySupport: kitty,
 	}
-	m.ActiveView = newPlaceholderView(state.Phase)
+	m.ActiveView = m.viewForPhase(state.Phase)
 	return m
 }
 
@@ -75,13 +75,17 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
+	case PackSelectedMsg:
+		m.Pack = msg.Pack
+		m.Content = content.ContentFromPack(msg.Pack)
+		newState := engine.Dispatch(&m.State, types.NewGame(msg.Seed), m.Content)
+		m.State = *newState
+		m.ActiveView = m.viewForPhase(m.State.Phase)
+
 	case GameAction:
-		oldPhase := m.State.Phase
 		newState := engine.Dispatch(&m.State, msg.Action, m.Content)
 		m.State = *newState
-		if m.State.Phase != oldPhase {
-			m.ActiveView = m.viewForPhase(m.State.Phase)
-		}
+		m.ActiveView = m.viewForPhase(m.State.Phase)
 	}
 
 	if m.ActiveView != nil {
@@ -145,8 +149,16 @@ func (m RootModel) View() string {
 }
 
 func (m RootModel) viewForPhase(phase types.GamePhase) PhaseView {
-	// Placeholder — will be replaced as we implement each phase view
-	return newPlaceholderView(phase)
+	switch phase {
+	case types.PhaseTitle:
+		return NewTitleView(m.Online)
+	case types.PhaseGameSetup:
+		return NewSetupView(m.Packs, m.State.GameType)
+	case types.PhaseCharacterCreation:
+		return NewCreationView(m.State.Character)
+	default:
+		return newPlaceholderView(phase)
+	}
 }
 
 // placeholderView is a temporary stand-in for unimplemented phases.
