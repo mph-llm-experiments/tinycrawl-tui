@@ -156,6 +156,8 @@ func (m RootModel) viewForPhase(phase types.GamePhase) PhaseView {
 		return NewSetupView(m.Packs, m.State.GameType)
 	case types.PhaseCharacterCreation:
 		return NewCreationView(m.State.Character)
+	case types.PhaseExploring, types.PhaseLooting:
+		return NewRoomView(&m.State, m.Content, m.KittySupport)
 	default:
 		return newPlaceholderView(phase)
 	}
