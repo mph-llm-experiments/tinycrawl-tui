@@ -1,0 +1,26 @@
+version: 2
+builds:
+  - main: .
+    binary: tinycrawl
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - format: tar.gz
+
+brews:
+  - repository:
+      owner: mph-llm-experiments
+      name: homebrew-tap
+    name: tinycrawl
+    description: "Terminal dungeon crawler using Cairn 2e rules"
+    homepage: "https://github.com/mph-llm-experiments/tinycrawl-tui"
+
+changelog:
+  sort: asc
