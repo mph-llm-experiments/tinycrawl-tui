@@ -160,6 +160,10 @@ func (m RootModel) viewForPhase(phase types.GamePhase) PhaseView {
 		return NewRoomView(&m.State, m.Content, m.KittySupport)
 	case types.PhaseCombat:
 		return NewCombatView(&m.State, m.Content, m.Client, m.Pack, m.KittySupport)
+	case types.PhaseDead, types.PhaseVictory:
+		return NewDeathView(&m.State, m.Client, m.Online)
+	case types.PhaseOssuary:
+		return NewOssuaryView(m.Client, m.Online)
 	default:
 		return newPlaceholderView(phase)
 	}
