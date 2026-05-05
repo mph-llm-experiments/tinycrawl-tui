@@ -72,10 +72,31 @@ func (v *InventoryView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if v.cursor < len(v.items)-1 {
 				v.cursor++
 			}
-		case "enter", " ", "u":
+		case "enter", " ":
+			if len(v.items) > 0 {
+				entry := v.items[v.cursor]
+				if entry.hasUse {
+					// Usable items: use them (torch, salve, etc.)
+					action := types.UseItem(entry.slotIndex)
+					v.action = &action
+				} else if entry.itemType == "weapon" || entry.itemType == "armor" || entry.itemType == "shield" {
+					// Equipment: equip to active slot
+					action := types.EquipItem(entry.slotIndex)
+					v.action = &action
+				}
+			}
+		case "u":
 			if len(v.items) > 0 && v.items[v.cursor].hasUse {
 				action := types.UseItem(v.items[v.cursor].slotIndex)
 				v.action = &action
+			}
+		case "e":
+			if len(v.items) > 0 {
+				entry := v.items[v.cursor]
+				if entry.itemType == "weapon" || entry.itemType == "armor" || entry.itemType == "shield" {
+					action := types.EquipItem(entry.slotIndex)
+					v.action = &action
+				}
 			}
 		case "d":
 			if len(v.items) > 0 {
@@ -119,8 +140,11 @@ func (v *InventoryView) View() string {
 		if selected.hasUse {
 			actions = append(actions, styleKey.Render("u")+" "+styleDim.Render("use"))
 		}
+		if selected.itemType == "weapon" || selected.itemType == "armor" || selected.itemType == "shield" {
+			actions = append(actions, styleKey.Render("e")+" "+styleDim.Render("equip"))
+		}
 		actions = append(actions, styleKey.Render("d")+" "+styleDim.Render("drop"))
-		actions = append(actions, styleKey.Render("esc")+" "+styleDim.Render("close"))
+		actions = append(actions, styleKey.Render("p")+" "+styleDim.Render("close"))
 		lines = append(lines, strings.Join(actions, "  "))
 	}
 
@@ -171,14 +195,12 @@ func (v *InventoryView) renderEntry(entry inventoryEntry, selected bool) string 
 
 func (v *InventoryView) KeyHints() []KeyHint {
 	hints := []KeyHint{
-		{Key: "up/dn", Desc: "navigate"},
+		{Key: "↑↓", Desc: "navigate"},
+		{Key: "enter", Desc: "use/equip"},
 	}
 	if len(v.items) > 0 {
-		if v.items[v.cursor].hasUse {
-			hints = append(hints, KeyHint{Key: "u", Desc: "use"})
-		}
 		hints = append(hints, KeyHint{Key: "d", Desc: "drop"})
 	}
-	hints = append(hints, KeyHint{Key: "esc", Desc: "close"})
+	hints = append(hints, KeyHint{Key: "p", Desc: "close"})
 	return hints
 }
