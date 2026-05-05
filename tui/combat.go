@@ -315,16 +315,12 @@ func (v *CombatView) View() string {
 	sections = append(sections, divider())
 
 	// ── Combat log ──
+	// Round header
+	sections = append(sections, lipgloss.NewStyle().Bold(true).Foreground(colorLabel).
+		Render(fmt.Sprintf("Round %d", v.state.Combat.Round)))
+
 	for _, entry := range v.state.Combat.Log {
-		// Color combat outcomes
-		styled := styleStat.Render(entry)
-		if strings.Contains(entry, "damage") || strings.Contains(entry, "strikes") {
-			styled = styleDanger.Render(entry)
-		} else if strings.Contains(entry, "destroyed") || strings.Contains(entry, "falls") || strings.Contains(entry, "flees") {
-			styled = lipgloss.NewStyle().Bold(true).Foreground(colorLoot).Render(entry)
-		} else if strings.Contains(entry, "stunned") || strings.Contains(entry, "Advantage") {
-			styled = lipgloss.NewStyle().Foreground(colorLoot).Render(entry)
-		}
+		styled := styleCombatEntry(entry)
 		sections = append(sections, styled)
 	}
 
@@ -366,6 +362,45 @@ func (v *CombatView) View() string {
 	}
 
 	return styleBox.Render(strings.Join(sections, "\n"))
+}
+
+func styleCombatEntry(entry string) string {
+	bold := lipgloss.NewStyle().Bold(true)
+
+	// Player attacks (you strike, you swing)
+	if strings.HasPrefix(entry, "You strike") || strings.HasPrefix(entry, "You swing") {
+		return bold.Foreground(colorStat).Render(entry)
+	}
+	// Monster attacks
+	if strings.Contains(entry, "hits you") || strings.Contains(entry, "strikes as you") {
+		return bold.Foreground(colorDanger).Render(entry)
+	}
+	// Damage overflow to STR
+	if strings.Contains(entry, "HP gone") || strings.Contains(entry, "damage to STR") {
+		return bold.Foreground(colorDanger).Render(entry)
+	}
+	// Armor absorption
+	if strings.Contains(entry, "absorbed") || strings.Contains(entry, "Armor absorbs") {
+		return styleDim.Render(entry)
+	}
+	// Kills / victory
+	if strings.Contains(entry, "destroyed") || strings.Contains(entry, "falls") || strings.Contains(entry, "flees") || strings.Contains(entry, "collapse") {
+		return bold.Foreground(colorLoot).Render(entry)
+	}
+	// Critical / scar
+	if strings.Contains(entry, "Critical") || strings.Contains(entry, "scar") {
+		return bold.Foreground(colorDanger).Render(entry)
+	}
+	// Stun / advantage
+	if strings.Contains(entry, "stunned") || strings.Contains(entry, "Advantage") || strings.Contains(entry, "upper hand") {
+		return lipgloss.NewStyle().Foreground(colorLoot).Render(entry)
+	}
+	// Flee attempts
+	if strings.Contains(entry, "flee") || strings.Contains(entry, "escape") || strings.Contains(entry, "sprint past") {
+		return styleLabel.Render(entry)
+	}
+	// Default
+	return styleStat.Render(entry)
 }
 
 func (v *CombatView) KeyHints() []KeyHint {

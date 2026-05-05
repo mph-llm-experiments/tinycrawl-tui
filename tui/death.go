@@ -110,28 +110,52 @@ func (v *DeathView) deathView() string {
 	// Killed by
 	sections = append(sections, center.Render(
 		lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("YOU HAVE FALLEN")))
-	if len(v.state.Log) > 0 {
-		lastLog := v.state.Log[len(v.state.Log)-1]
-		sections = append(sections, center.Render(styleLabel.Render(lastLog.Text)))
+
+	// Find cause of death — scan log for monster/trap references
+	causeOfDeath := ""
+	for _, entry := range v.state.Log {
+		if strings.Contains(entry.Text, "blocks your path") {
+			// "A Root Goblin blocks your path!" → "Root Goblin"
+			text := entry.Text
+			text = strings.TrimPrefix(text, "A ")
+			text = strings.TrimSuffix(text, " blocks your path!")
+			causeOfDeath = text
+		} else if strings.Contains(entry.Text, "catches you") {
+			text := entry.Text
+			text = strings.TrimPrefix(text, "A ")
+			idx := strings.Index(text, " catches")
+			if idx > 0 {
+				causeOfDeath = text[:idx]
+			}
+		} else if strings.Contains(entry.Text, "trap") {
+			causeOfDeath = "a trap"
+		}
+	}
+	if causeOfDeath != "" {
+		sections = append(sections, center.Render(styleDim.Render("killed by "+causeOfDeath)))
 	}
 
 	sections = append(sections, "")
 
-	// Stats
+	// Stats with bold labels
 	if v.state.Character != nil {
 		c := v.state.Character
-		sections = append(sections, center.Render(styleStat.Render(fmt.Sprintf(
-			"STR %d  DEX %d  WIL %d  HP %d/%d  Armor %d",
-			c.Str, c.Dex, c.Wil, c.HP, c.MaxHP, c.Armor))))
+		bold := lipgloss.NewStyle().Bold(true).Foreground(colorLabel)
+		sections = append(sections, center.Render(
+			bold.Render("STR ")+styleStat.Render(fmt.Sprintf("%d", c.Str))+"  "+
+				bold.Render("DEX ")+styleStat.Render(fmt.Sprintf("%d", c.Dex))+"  "+
+				bold.Render("WIL ")+styleStat.Render(fmt.Sprintf("%d", c.Wil))+"  "+
+				bold.Render("Armor ")+styleStat.Render(fmt.Sprintf("%d", c.Armor))))
 	}
 
 	sections = append(sections, "")
 
-	// Run stats
+	// Run stats with bold labels
+	bold := lipgloss.NewStyle().Bold(true).Foreground(colorLabel)
 	sections = append(sections, center.Render(
-		styleLabel.Render("Depth reached: ")+styleStat.Render(fmt.Sprintf("%d", v.state.Depth()))))
+		bold.Render("Depth reached: ")+styleStat.Render(fmt.Sprintf("%d", v.state.Depth()))))
 	sections = append(sections, center.Render(
-		styleLabel.Render("Monsters killed: ")+styleStat.Render(fmt.Sprintf("%d", v.state.MonstersKilled))))
+		bold.Render("Monsters killed: ")+styleStat.Render(fmt.Sprintf("%d", v.state.MonstersKilled))))
 
 	return styleBox.Render(strings.Join(sections, "\n"))
 }
