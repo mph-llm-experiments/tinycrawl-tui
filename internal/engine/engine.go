@@ -116,6 +116,20 @@ var directionOffsets = map[string]types.Pos{
 	"w": {X: -1, Y: 0},
 }
 
+// updateExpeditionExits populates the current expedition room's Exits field
+// from its walls. Expedition exits are dynamic (built from grid walls + hints),
+// unlike sprint exits which are static from the room template.
+func updateExpeditionExits(s *types.GameState) {
+	if s.Expedition == nil {
+		return
+	}
+	room := dungeon.GetRoom(s.Expedition.Grid, s.Expedition.PlayerPos)
+	if room == nil {
+		return
+	}
+	room.Exits = dungeon.BuildExits(s.Expedition.Grid, room, &s.Expedition.Entry, s.Expedition.PreviousPos)
+}
+
 // CreateInitialState creates a new game state at the title screen.
 func CreateInitialState(seed int) types.GameState {
 	return types.GameState{
@@ -917,6 +931,7 @@ func Dispatch(state *types.GameState, action types.Action, cd types.ContentData)
 			d := dungeon.MarkExpeditionVisited(*s.Expedition)
 			d = dungeon.MarkExpeditionCleared(d)
 			s.Expedition = &d
+			updateExpeditionExits(s)
 		}
 
 		s.RngState = r.GetState()
@@ -958,6 +973,7 @@ func Dispatch(state *types.GameState, action types.Action, cd types.ContentData)
 			if room != nil {
 				nextRoom = &room.DungeonRoom
 			}
+			updateExpeditionExits(s)
 		} else {
 			return state
 		}
@@ -1128,6 +1144,7 @@ func Dispatch(state *types.GameState, action types.Action, cd types.ContentData)
 					if dir != "" {
 						d := dungeon.NavigateExpedition(*exp, dir)
 						s.Expedition = &d
+						updateExpeditionExits(s)
 					}
 				}
 			}
@@ -1260,6 +1277,7 @@ func Dispatch(state *types.GameState, action types.Action, cd types.ContentData)
 				return state
 			}
 			s.Expedition = &d
+			updateExpeditionExits(s)
 			room := d.Grid[d.PlayerPos.Y][d.PlayerPos.X]
 			if room != nil {
 				nextRoom = &room.DungeonRoom

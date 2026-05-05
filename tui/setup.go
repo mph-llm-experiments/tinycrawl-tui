@@ -56,7 +56,7 @@ func (v *SetupView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (v *SetupView) updateGameType(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "t", "tab":
+	case "up", "down", "left", "right", "t", "tab", "k", "j":
 		if v.gameType == types.GameTypeSprint {
 			v.gameType = types.GameTypeExpedition
 		} else {
@@ -65,7 +65,7 @@ func (v *SetupView) updateGameType(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return v, func() tea.Msg {
 			return GameAction{Action: types.SelectType(v.gameType)}
 		}
-	case "enter":
+	case "enter", " ":
 		v.step = stepPackSelection
 		v.cursor = 0
 	case "esc":
