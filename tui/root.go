@@ -43,9 +43,16 @@ func NewRootModel(cfg client.Config, packs []types.ContentPack, kitty bool) Root
 
 	state := engine.CreateInitialState(0)
 
-	// Default pack
+	// Find the configured default pack, fall back to first available
 	var pack types.ContentPack
-	if len(packs) > 0 {
+	for _, p := range packs {
+		slug := strings.ToLower(strings.ReplaceAll(p.Meta.Name, " ", "-"))
+		if slug == cfg.DefaultPack {
+			pack = p
+			break
+		}
+	}
+	if pack.Meta.Name == "" && len(packs) > 0 {
 		pack = packs[0]
 	}
 
@@ -90,21 +97,24 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, initCmd
 
 	case TakeAndEquipMsg:
-		// Take the loot item, then equip it (move to slot 0)
+		// Remember what the old weapon was so we can find the new one
+		var oldWeaponID string
+		if m.State.Character != nil {
+			for _, item := range m.State.Character.Inventory {
+				if item != nil && item.Type == "weapon" {
+					oldWeaponID = item.ID
+					break
+				}
+			}
+		}
+		// Take the loot item
 		s1 := engine.Dispatch(&m.State, types.TakeItem(msg.TakeIndex), m.Content)
 		oldPhase := m.State.Phase
 		m.State = *s1
-		// Find the slot where the new item landed and equip it
+		// Find the NEW weapon (different ID from old) and equip it
 		if m.State.Character != nil {
-			// The item was just added — find the last weapon that isn't at slot 0
-			for i := len(m.State.Character.Inventory) - 1; i > 0; i-- {
-				item := m.State.Character.Inventory[i]
-				if item != nil && item.Type == "weapon" {
-					// Check this isn't the weapon that was already at slot 0
-					first := m.State.Character.Inventory[0]
-					if first == nil || first.ID != item.ID || first == item {
-						break
-					}
+			for i, item := range m.State.Character.Inventory {
+				if item != nil && item.Type == "weapon" && item.ID != oldWeaponID {
 					s2 := engine.Dispatch(&m.State, types.EquipItem(i), m.Content)
 					m.State = *s2
 					break

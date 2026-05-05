@@ -41,9 +41,14 @@ func NewTitleView(online bool, quickPack *types.ContentPack) *TitleView {
 		menuItem{label: "Ossuary", action: func() tea.Msg { return GameAction{Action: types.OpenOssuary()} }},
 		menuItem{label: "Quit", action: func() tea.Msg { return tea.Quit() }},
 	)
+	// Default cursor to New Game (not Quick Play)
+	defaultCursor := 0
+	if quickPack != nil {
+		defaultCursor = 1 // skip past Quick Play to New Game
+	}
 	return &TitleView{
 		online:    online,
-		cursor:    0,
+		cursor:    defaultCursor,
 		items:     items,
 		quickPack: quickPack,
 	}
