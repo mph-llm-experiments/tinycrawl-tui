@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mph-llm-experiments/tinycrawl-tui/internal/engine"
+	"github.com/mph-llm-experiments/tinycrawl-tui/internal/rng"
 	"github.com/mph-llm-experiments/tinycrawl-tui/internal/types"
 )
 
@@ -58,6 +59,15 @@ func (v *RoomView) choiceCount() int {
 	return n
 }
 
+// dieMax returns the maximum value of a dice notation (e.g., "d8" → 8, "2d6" → 12).
+func dieMax(notation string) int {
+	count, sides, err := rng.ParseDice(notation)
+	if err != nil {
+		return 0
+	}
+	return count * sides
+}
+
 // findEquippedWeapon returns the first weapon in inventory (the one used in combat).
 func (v *RoomView) findEquippedWeapon() (*types.Item, int) {
 	if v.state.Character == nil {
@@ -83,23 +93,23 @@ func (v *RoomView) buildLootChoices() []lootChoice {
 	for i, item := range v.state.PendingLoot {
 		canFit := engine.CanAddItem(*char, item.Slots)
 
-		// For weapons: show comparison and equip option
-		if item.Type == "weapon" && currentWeapon != nil {
-			comparison := fmt.Sprintf(" (%s vs your %s %s)", item.Damage, currentWeapon.Name, currentWeapon.Damage)
+		// For weapons: offer equip/swap only if it's BETTER than current
+		isBetterWeapon := item.Type == "weapon" && currentWeapon != nil &&
+			dieMax(item.Damage) > dieMax(currentWeapon.Damage)
 
+		if isBetterWeapon {
+			comparison := styleDim.Render(fmt.Sprintf(" (%s vs your %s)", item.Damage, currentWeapon.Damage))
 			if canFit {
-				// Can fit: "Take & Equip" puts it in inventory and moves to active slot
 				choices = append(choices, lootChoice{
 					label: lipgloss.NewStyle().Foreground(colorLoot).Render(
-						"Equip "+v.itemDetail(item)) + styleDim.Render(comparison),
+						"Equip "+v.itemDetail(item)) + comparison,
 					takeIndex: i,
-					swapSlot:  -2, // special: take + equip
+					swapSlot:  -2,
 				})
 			} else {
-				// No room: "Swap" drops current weapon, takes new one
 				choices = append(choices, lootChoice{
 					label: lipgloss.NewStyle().Foreground(colorLoot).Render(
-						"Swap for "+currentWeapon.Name) + styleDim.Render(comparison),
+						"Swap for "+currentWeapon.Name) + comparison,
 					takeIndex: i,
 					swapSlot:  currentWeaponSlot,
 				})
@@ -112,8 +122,8 @@ func (v *RoomView) buildLootChoices() []lootChoice {
 			})
 		} else {
 			choices = append(choices, lootChoice{
-				label:     styleDim.Render("Take "+v.itemDetail(item)) + styleDanger.Render(" (full)"),
-				takeIndex: i,
+				label:     styleDim.Render(v.itemDetail(item)) + styleDanger.Render(" (full)"),
+				takeIndex: -1, // can't take, not actionable
 				swapSlot:  -1,
 			})
 		}

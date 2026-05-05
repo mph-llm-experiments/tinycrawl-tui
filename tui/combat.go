@@ -259,12 +259,12 @@ func (v *CombatView) View() string {
 	monster := v.state.Combat.Monster
 	band := types.GetLightBand(v.state.Light)
 	m := monster.Base
+	center := lipgloss.NewStyle().Width(contentWidth - 4).Align(lipgloss.Center)
 
 	var sections []string
 
 	// ── Section header ──
-	sections = append(sections, lipgloss.NewStyle().Width(contentWidth-4).Align(lipgloss.Center).
-		Render(styleDim.Render("— combat —")))
+	sections = append(sections, center.Render(styleDim.Render("— combat —")))
 
 	// ── Monster portrait (centered, stacked above name) ──
 	if v.kitty && m.Image != "" && (band == types.LightBright || band == types.LightDim) {
@@ -275,8 +275,7 @@ func (v *CombatView) View() string {
 		pngData, err := base64.StdEncoding.DecodeString(imgData)
 		if err == nil {
 			imageStr := kittyPkg.RenderImage(1, pngData, 10, 5)
-			sections = append(sections, lipgloss.NewStyle().Width(contentWidth-4).Align(lipgloss.Center).
-				Render(imageStr))
+			sections = append(sections, center.Render(imageStr))
 		}
 	}
 
@@ -292,26 +291,23 @@ func (v *CombatView) View() string {
 	}
 
 	monsterLines := []string{
-		lipgloss.NewStyle().Width(contentWidth-4).Align(lipgloss.Center).
-			Render(styleTitle.Render("\u2620 " + name)),
+		center.Render(lipgloss.NewStyle().Bold(true).Foreground(colorName).Render("\u2620 " + name)),
 	}
 	if band == types.LightBright {
 		monsterLines = append(monsterLines,
-			lipgloss.NewStyle().Width(contentWidth-4).Align(lipgloss.Center).
-				Render(styleStat.Render(fmt.Sprintf("STR %d  DEX %d  WIL %d  HP %d/%d  Armor %d",
-					m.Str, m.Dex, m.Wil, monster.CurrentHP, m.HP, m.Armor))),
-			lipgloss.NewStyle().Width(contentWidth-4).Align(lipgloss.Center).
-				Render(styleDim.Render(fmt.Sprintf("%s (%s)", m.Attack.Name, m.Attack.Die))),
+			center.Render(styleStat.Render(fmt.Sprintf(
+				"STR %d  DEX %d  WIL %d", m.Str, m.Dex, m.Wil))),
+			center.Render(styleStat.Render(fmt.Sprintf(
+				"HP %d/%d  Armor %d", monster.CurrentHP, m.HP, m.Armor))+
+				styleDim.Render(fmt.Sprintf("  %s (%s)", m.Attack.Name, m.Attack.Die))),
 		)
 		if len(m.Weaknesses) > 0 {
 			monsterLines = append(monsterLines,
-				lipgloss.NewStyle().Width(contentWidth-4).Align(lipgloss.Center).
-					Render(styleDanger.Render("Weak: "+strings.Join(m.Weaknesses, ", "))))
+				center.Render(styleDanger.Render("Weakness: "+strings.Join(m.Weaknesses, ", "))))
 		}
 	} else if band == types.LightDim {
 		monsterLines = append(monsterLines,
-			lipgloss.NewStyle().Width(contentWidth-4).Align(lipgloss.Center).
-				Render(styleStat.Render(fmt.Sprintf("HP %d/%d  Armor %d", monster.CurrentHP, m.HP, m.Armor))))
+			center.Render(styleStat.Render(fmt.Sprintf("HP %d/%d  Armor %d", monster.CurrentHP, m.HP, m.Armor))))
 	}
 	sections = append(sections, strings.Join(monsterLines, "\n"))
 
@@ -320,7 +316,16 @@ func (v *CombatView) View() string {
 
 	// ── Combat log ──
 	for _, entry := range v.state.Combat.Log {
-		sections = append(sections, styleStat.Render(entry))
+		// Color combat outcomes
+		styled := styleStat.Render(entry)
+		if strings.Contains(entry, "damage") || strings.Contains(entry, "strikes") {
+			styled = styleDanger.Render(entry)
+		} else if strings.Contains(entry, "destroyed") || strings.Contains(entry, "falls") || strings.Contains(entry, "flees") {
+			styled = lipgloss.NewStyle().Bold(true).Foreground(colorLoot).Render(entry)
+		} else if strings.Contains(entry, "stunned") || strings.Contains(entry, "Advantage") {
+			styled = lipgloss.NewStyle().Foreground(colorLoot).Render(entry)
+		}
+		sections = append(sections, styled)
 	}
 
 	// ── Actions or creative input ──
@@ -329,6 +334,20 @@ func (v *CombatView) View() string {
 	switch v.subState {
 	case combatTextInput:
 		sections = append(sections, styleLabel.Render("Creative Action:"))
+		// Show inventory items so player knows what they can work with
+		if v.state.Character != nil {
+			seen := map[string]bool{}
+			var items []string
+			for _, item := range v.state.Character.Inventory {
+				if item != nil && !seen[item.ID] {
+					seen[item.ID] = true
+					items = append(items, item.Name)
+				}
+			}
+			if len(items) > 0 {
+				sections = append(sections, styleDim.Render("You have: "+strings.Join(items, ", ")))
+			}
+		}
 		sections = append(sections, v.textInput.View())
 	case combatWaitingGM:
 		sections = append(sections, styleDim.Render(v.spinner.View()+" Thinking..."))

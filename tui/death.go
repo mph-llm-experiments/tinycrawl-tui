@@ -101,29 +101,33 @@ func (v *DeathView) deathView() string {
 	center := lipgloss.NewStyle().Width(contentWidth - 4).Align(lipgloss.Center)
 	var sections []string
 
-	// Headline — bold, centered
-	sections = append(sections, center.Render(
-		lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("YOU HAVE FALLEN")))
-	sections = append(sections, "")
-
-	// What killed me
-	if len(v.state.Log) > 0 {
-		lastLog := v.state.Log[len(v.state.Log)-1]
-		sections = append(sections, center.Render(styleDim.Render(lastLog.Text)))
-		sections = append(sections, "")
+	// Character name
+	if v.state.Character != nil {
+		sections = append(sections, center.Render(
+			lipgloss.NewStyle().Bold(true).Foreground(colorName).Render(v.state.Character.Name)))
 	}
 
-	// Character info
+	// Killed by
+	sections = append(sections, center.Render(
+		lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("YOU HAVE FALLEN")))
+	if len(v.state.Log) > 0 {
+		lastLog := v.state.Log[len(v.state.Log)-1]
+		sections = append(sections, center.Render(styleLabel.Render(lastLog.Text)))
+	}
+
+	sections = append(sections, "")
+
+	// Stats
 	if v.state.Character != nil {
 		c := v.state.Character
-		sections = append(sections, center.Render(styleTitle.Render(c.Name)))
 		sections = append(sections, center.Render(styleStat.Render(fmt.Sprintf(
 			"STR %d  DEX %d  WIL %d  HP %d/%d  Armor %d",
 			c.Str, c.Dex, c.Wil, c.HP, c.MaxHP, c.Armor))))
-		sections = append(sections, "")
 	}
 
-	// Run stats — centered
+	sections = append(sections, "")
+
+	// Run stats
 	sections = append(sections, center.Render(
 		styleLabel.Render("Depth reached: ")+styleStat.Render(fmt.Sprintf("%d", v.state.Depth()))))
 	sections = append(sections, center.Render(
