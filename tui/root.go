@@ -86,6 +86,38 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		initCmd := m.ActiveView.Init()
 		return m, initCmd
 
+	case TakeAndEquipMsg:
+		// Take the loot item, then equip it (move to slot 0)
+		s1 := engine.Dispatch(&m.State, types.TakeItem(msg.TakeIndex), m.Content)
+		oldPhase := m.State.Phase
+		m.State = *s1
+		// Find the slot where the new item landed and equip it
+		if m.State.Character != nil {
+			// The item was just added — find the last weapon that isn't at slot 0
+			for i := len(m.State.Character.Inventory) - 1; i > 0; i-- {
+				item := m.State.Character.Inventory[i]
+				if item != nil && item.Type == "weapon" {
+					// Check this isn't the weapon that was already at slot 0
+					first := m.State.Character.Inventory[0]
+					if first == nil || first.ID != item.ID || first == item {
+						break
+					}
+					s2 := engine.Dispatch(&m.State, types.EquipItem(i), m.Content)
+					m.State = *s2
+					break
+				}
+			}
+		}
+		if m.State.Phase != oldPhase {
+			m.ActiveView = m.viewForPhase(m.State.Phase)
+			initCmd := m.ActiveView.Init()
+			if initCmd != nil {
+				return m, initCmd
+			}
+		} else {
+			m.refreshViewState()
+		}
+
 	case SwapItemMsg:
 		// Drop the old item, then take the loot item
 		s1 := engine.Dispatch(&m.State, types.DropItem(msg.DropSlot), m.Content)

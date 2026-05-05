@@ -16,6 +16,11 @@ type SwapItemMsg struct {
 	TakeIndex int
 }
 
+// TakeAndEquipMsg tells root to take a loot item and equip it (move to active slot).
+type TakeAndEquipMsg struct {
+	TakeIndex int
+}
+
 // lootChoice represents one selectable option during looting.
 type lootChoice struct {
 	label     string
@@ -53,19 +58,53 @@ func (v *RoomView) choiceCount() int {
 	return n
 }
 
-// buildLootChoices creates the list of choices during looting, including swap options.
+// findEquippedWeapon returns the first weapon in inventory (the one used in combat).
+func (v *RoomView) findEquippedWeapon() (*types.Item, int) {
+	if v.state.Character == nil {
+		return nil, -1
+	}
+	for i, item := range v.state.Character.Inventory {
+		if item != nil && item.Type == "weapon" {
+			return item, i
+		}
+	}
+	return nil, -1
+}
+
+// buildLootChoices creates the list of choices during looting, including equip/swap options.
 func (v *RoomView) buildLootChoices() []lootChoice {
 	if v.state.Character == nil {
 		return nil
 	}
 	char := v.state.Character
+	currentWeapon, currentWeaponSlot := v.findEquippedWeapon()
 	var choices []lootChoice
 
 	for i, item := range v.state.PendingLoot {
 		canFit := engine.CanAddItem(*char, item.Slots)
 
-		// Normal take option
-		if canFit {
+		// For weapons: show comparison and equip option
+		if item.Type == "weapon" && currentWeapon != nil {
+			comparison := fmt.Sprintf(" (%s vs your %s %s)", item.Damage, currentWeapon.Name, currentWeapon.Damage)
+
+			if canFit {
+				// Can fit: "Take & Equip" puts it in inventory and moves to active slot
+				choices = append(choices, lootChoice{
+					label: lipgloss.NewStyle().Foreground(colorLoot).Render(
+						"Equip "+v.itemDetail(item)) + styleDim.Render(comparison),
+					takeIndex: i,
+					swapSlot:  -2, // special: take + equip
+				})
+			} else {
+				// No room: "Swap" drops current weapon, takes new one
+				choices = append(choices, lootChoice{
+					label: lipgloss.NewStyle().Foreground(colorLoot).Render(
+						"Swap for "+currentWeapon.Name) + styleDim.Render(comparison),
+					takeIndex: i,
+					swapSlot:  currentWeaponSlot,
+				})
+			}
+		} else if canFit {
 			choices = append(choices, lootChoice{
 				label:     lipgloss.NewStyle().Foreground(colorLoot).Render("Take " + v.itemDetail(item)),
 				takeIndex: i,
@@ -77,22 +116,6 @@ func (v *RoomView) buildLootChoices() []lootChoice {
 				takeIndex: i,
 				swapSlot:  -1,
 			})
-		}
-
-		// Swap option: if can't fit and there's an equipped item of same type to swap
-		if !canFit && (item.Type == "weapon" || item.Type == "armor" || item.Type == "shield") {
-			for si, inv := range char.Inventory {
-				if inv != nil && inv.Type == item.Type {
-					swapLabel := lipgloss.NewStyle().Foreground(colorLoot).Render(
-						fmt.Sprintf("Swap for %s", v.itemDetail(*inv)))
-					choices = append(choices, lootChoice{
-						label:     swapLabel,
-						takeIndex: i,
-						swapSlot:  si,
-					})
-					break // one swap option per loot item
-				}
-			}
 		}
 	}
 
@@ -231,8 +254,12 @@ func (v *RoomView) selectCurrent() tea.Cmd {
 		}
 		choice := choices[v.cursor]
 		if choice.takeIndex < 0 {
-			// Skip
 			return func() tea.Msg { return GameAction{Action: types.SkipLoot()} }
+		}
+		if choice.swapSlot == -2 {
+			// Take + equip: take the item, then equip it to active slot
+			idx := choice.takeIndex
+			return func() tea.Msg { return TakeAndEquipMsg{TakeIndex: idx} }
 		}
 		if choice.swapSlot >= 0 {
 			// Swap: drop old, then take new
