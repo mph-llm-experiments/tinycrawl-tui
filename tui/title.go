@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mph-llm-experiments/tinycrawl-tui/internal/types"
@@ -13,22 +15,37 @@ type menuItem struct {
 
 // TitleView displays the title screen with a menu.
 type TitleView struct {
-	online   bool
-	cursor   int
-	items    []menuItem
+	online    bool
+	cursor    int
+	items     []menuItem
+	quickPack *types.ContentPack
 }
 
 // NewTitleView creates a new title screen view.
-func NewTitleView(online bool) *TitleView {
-	items := []menuItem{
-		{label: "Play", action: func() tea.Msg { return GameAction{Action: types.StartGameSetup()} }},
-		{label: "Ossuary", action: func() tea.Msg { return GameAction{Action: types.OpenOssuary()} }},
-		{label: "Quit", action: func() tea.Msg { return tea.Quit() }},
+// If quickPack is provided, a "Quick Play" option appears that starts immediately.
+func NewTitleView(online bool, quickPack *types.ContentPack) *TitleView {
+	var items []menuItem
+
+	if quickPack != nil {
+		pack := *quickPack
+		items = append(items, menuItem{
+			label: "Quick Play — " + pack.Meta.Name,
+			action: func() tea.Msg {
+				return PackSelectedMsg{Pack: pack, Seed: int(time.Now().UnixNano())}
+			},
+		})
 	}
+
+	items = append(items,
+		menuItem{label: "New Game", action: func() tea.Msg { return GameAction{Action: types.StartGameSetup()} }},
+		menuItem{label: "Ossuary", action: func() tea.Msg { return GameAction{Action: types.OpenOssuary()} }},
+		menuItem{label: "Quit", action: func() tea.Msg { return tea.Quit() }},
+	)
 	return &TitleView{
-		online: online,
-		cursor: 0,
-		items:  items,
+		online:    online,
+		cursor:    0,
+		items:     items,
+		quickPack: quickPack,
 	}
 }
 
@@ -48,10 +65,8 @@ func (v *TitleView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			return v, v.items[v.cursor].action
-		case "p":
-			return v, v.items[0].action
-		case "o":
-			return v, v.items[1].action
+		case " ":
+			return v, v.items[v.cursor].action
 		case "q":
 			return v, tea.Quit
 		}
@@ -72,13 +87,11 @@ func (v *TitleView) View() string {
 	// Menu
 	var menu string
 	for i, item := range v.items {
-		cursor := "  "
-		style := styleStat
 		if i == v.cursor {
-			cursor = "▸ "
-			style = styleTitle
+			menu += styleTitle.Render("▸ ") + lipgloss.NewStyle().Bold(true).Foreground(colorStat).Render(item.label) + "\n"
+		} else {
+			menu += styleDim.Render("  ") + styleStat.Render(item.label) + "\n"
 		}
-		menu += cursor + style.Render(item.label) + "\n"
 	}
 
 	return title + "\n" +
@@ -89,8 +102,8 @@ func (v *TitleView) View() string {
 
 func (v *TitleView) KeyHints() []KeyHint {
 	return []KeyHint{
-		{Key: "p", Desc: "play"},
-		{Key: "o", Desc: "ossuary"},
+		{Key: "↑↓", Desc: "choose"},
+		{Key: "enter", Desc: "select"},
 		{Key: "q", Desc: "quit"},
 	}
 }

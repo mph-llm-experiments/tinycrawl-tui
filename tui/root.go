@@ -87,16 +87,19 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, initCmd
 
 	case GameAction:
+		oldPhase := m.State.Phase
 		newState := engine.Dispatch(&m.State, msg.Action, m.Content)
 		m.State = *newState
-		m.ActiveView = m.viewForPhase(m.State.Phase)
-		initCmd := m.ActiveView.Init()
-		if initCmd != nil {
-			// Delegate update to the new view, then batch with init cmd
-			var viewCmd tea.Cmd
-			updated, viewCmd := m.ActiveView.Update(msg)
-			m.ActiveView = updated.(PhaseView)
-			return m, tea.Batch(initCmd, viewCmd)
+		if m.State.Phase != oldPhase {
+			// Phase changed — create new view
+			m.ActiveView = m.viewForPhase(m.State.Phase)
+			initCmd := m.ActiveView.Init()
+			if initCmd != nil {
+				return m, initCmd
+			}
+		} else {
+			// Same phase — update state pointer in existing view, preserve UI state
+			m.refreshViewState()
 		}
 	}
 
@@ -153,10 +156,37 @@ func (m RootModel) View() string {
 	return lipgloss.NewStyle().Width(m.Width).Align(lipgloss.Center).Render(block)
 }
 
+// refreshViewState updates the state pointer in the current view without
+// recreating it. This preserves local UI state (cursor, inventory overlay, etc.)
+// across same-phase GameActions like drop_item or use_item.
+func (m *RootModel) refreshViewState() {
+	switch v := m.ActiveView.(type) {
+	case *RoomView:
+		v.state = &m.State
+		// Rebuild inventory view's character reference if open
+		if v.inventory != nil {
+			v.inventory.char = m.State.Character
+			v.inventory.items = v.inventory.buildEntries()
+		}
+	case *CombatView:
+		v.state = &m.State
+	case *DeathView:
+		v.state = &m.State
+	case *CreationView:
+		v.char = m.State.Character
+	}
+}
+
 func (m RootModel) viewForPhase(phase types.GamePhase) PhaseView {
 	switch phase {
 	case types.PhaseTitle:
-		return NewTitleView(m.Online)
+		// Offer quick play with the current/default pack
+		var quickPack *types.ContentPack
+		if len(m.Packs) > 0 {
+			p := m.Pack
+			quickPack = &p
+		}
+		return NewTitleView(m.Online, quickPack)
 	case types.PhaseGameSetup:
 		return NewSetupView(m.Packs, m.State.GameType)
 	case types.PhaseCharacterCreation:

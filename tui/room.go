@@ -223,8 +223,9 @@ func (v *RoomView) View() string {
 		sections = append(sections, styleStat.Render(desc))
 	}
 
-	// Game log entries
+	// Game log entries — show prominently (these include combat results)
 	if len(v.state.Log) > 0 {
+		sections = append(sections, "")
 		sections = append(sections, v.renderLog())
 	}
 
