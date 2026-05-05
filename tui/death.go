@@ -111,23 +111,22 @@ func (v *DeathView) deathView() string {
 	sections = append(sections, center.Render(
 		lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("YOU HAVE FALLEN")))
 
-	// Find cause of death — scan log for monster/trap references
+	// Find cause of death — scan log for monster name or trap
 	causeOfDeath := ""
 	for _, entry := range v.state.Log {
-		if strings.Contains(entry.Text, "blocks your path") {
-			// "A Root Goblin blocks your path!" → "Root Goblin"
-			text := entry.Text
-			text = strings.TrimPrefix(text, "A ")
-			text = strings.TrimSuffix(text, " blocks your path!")
-			causeOfDeath = text
-		} else if strings.Contains(entry.Text, "catches you") {
-			text := entry.Text
-			text = strings.TrimPrefix(text, "A ")
-			idx := strings.Index(text, " catches")
-			if idx > 0 {
-				causeOfDeath = text[:idx]
-			}
-		} else if strings.Contains(entry.Text, "trap") {
+		text := entry.Text
+		// "Root Goblin hits you for 5 damage." → "Root Goblin"
+		if idx := strings.Index(text, " hits you"); idx > 0 {
+			causeOfDeath = text[:idx]
+		} else if idx := strings.Index(text, " strikes as you"); idx > 0 {
+			causeOfDeath = text[:idx]
+		} else if idx := strings.Index(text, " attacks for"); idx > 0 {
+			causeOfDeath = text[:idx]
+		} else if idx := strings.Index(text, " blocks your path"); idx > 0 {
+			causeOfDeath = strings.TrimPrefix(text[:idx], "A ")
+		} else if idx := strings.Index(text, " catches you"); idx > 0 {
+			causeOfDeath = strings.TrimPrefix(text[:idx], "A ")
+		} else if strings.Contains(text, "trap") {
 			causeOfDeath = "a trap"
 		}
 	}

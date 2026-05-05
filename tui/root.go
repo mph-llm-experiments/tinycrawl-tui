@@ -80,8 +80,11 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PackSelectedMsg:
 		m.Pack = msg.Pack
 		m.Content = content.ContentFromPack(msg.Pack)
+		// Preserve game type from setup (don't let NewGame reset it)
+		gameType := m.State.GameType
 		newState := engine.Dispatch(&m.State, types.NewGame(msg.Seed), m.Content)
 		m.State = *newState
+		m.State.GameType = gameType
 		m.ActiveView = m.viewForPhase(m.State.Phase)
 		initCmd := m.ActiveView.Init()
 		return m, initCmd
@@ -137,8 +140,13 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case GameAction:
 		oldPhase := m.State.Phase
+		savedGameType := m.State.GameType
 		newState := engine.Dispatch(&m.State, msg.Action, m.Content)
 		m.State = *newState
+		// Preserve game type across restarts (engine resets it to sprint)
+		if msg.Action.Type == "restart" {
+			m.State.GameType = savedGameType
+		}
 		if m.State.Phase != oldPhase {
 			// Phase changed — create new view
 			m.ActiveView = m.viewForPhase(m.State.Phase)
