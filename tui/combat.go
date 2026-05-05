@@ -8,7 +8,6 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mph-llm-experiments/tinycrawl-tui/internal/client"
 	"github.com/mph-llm-experiments/tinycrawl-tui/internal/gm"
 	kittyPkg "github.com/mph-llm-experiments/tinycrawl-tui/internal/kitty"
@@ -221,8 +220,25 @@ func (v *CombatView) View() string {
 
 	var sections []string
 
-	// Monster card
-	monsterCard := renderMonsterCard(v.state.Combat.Monster, v.state.Light, v.kitty)
+	// Monster image using Unicode placeholders (integrates with lipgloss layout)
+	monster := v.state.Combat.Monster
+	band := types.GetLightBand(v.state.Light)
+	if v.kitty && monster.Base.Image != "" && (band == types.LightBright || band == types.LightDim) {
+		imgData := monster.Base.Image
+		if idx := strings.Index(imgData, ","); idx >= 0 {
+			imgData = imgData[idx+1:]
+		}
+		pngData, err := base64.StdEncoding.DecodeString(imgData)
+		if err == nil {
+			// RenderImage returns escape sequences (invisible) + Unicode placeholders
+			// (measurable cells) — safe for lipgloss layout
+			imageStr := kittyPkg.RenderImage(1, pngData, 12, 6)
+			sections = append(sections, imageStr)
+		}
+	}
+
+	// Monster card (text stats)
+	monsterCard := renderMonsterCard(v.state.Combat.Monster, v.state.Light)
 	sections = append(sections, monsterCard)
 
 	// Combat log
@@ -260,7 +276,7 @@ func (v *CombatView) renderCombatLog() string {
 	return strings.Join(lines, "\n")
 }
 
-func renderMonsterCard(monster types.MonsterInstance, light int, kitty bool) string {
+func renderMonsterCard(monster types.MonsterInstance, light int) string {
 	band := types.GetLightBand(light)
 	m := monster.Base
 
@@ -289,20 +305,7 @@ func renderMonsterCard(monster types.MonsterInstance, light int, kitty bool) str
 		stats = fmt.Sprintf("HP %d/%d  Armor %d", monster.CurrentHP, m.HP, m.Armor)
 	}
 
-	// Image (Kitty protocol)
-	var image string
-	if kitty && m.Image != "" && (band == types.LightBright || band == types.LightDim) {
-		pngData, err := base64.StdEncoding.DecodeString(m.Image)
-		if err == nil {
-			image = kittyPkg.RenderInline(pngData, 6, 3)
-		}
-	}
-
-	// Layout: image left, text right (if image available)
-	if image != "" {
-		return lipgloss.JoinHorizontal(lipgloss.Top, image, "  "+header+"\n  "+stats)
-	}
-	return styleBox.Render(header + "\n" + styleStat.Render(stats))
+	return header + "\n" + styleStat.Render(stats)
 }
 
 func (v *CombatView) KeyHints() []KeyHint {

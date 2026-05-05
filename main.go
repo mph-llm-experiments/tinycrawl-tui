@@ -17,7 +17,15 @@ func main() {
 	packs, _ := content.LoadEmbeddedPacks()
 	localPacks, _ := content.LoadLocalPacks(filepath.Join(client.ConfigDir(), "packs"))
 	packs = append(packs, localPacks...)
-	kittySupport := kitty.Detect()
+	var kittySupport bool
+	switch cfg.ImageMode {
+	case "kitty":
+		kittySupport = true
+	case "off":
+		kittySupport = false
+	default:
+		kittySupport = kitty.Detect()
+	}
 
 	m := tui.NewRootModel(cfg, packs, kittySupport)
 	p := tea.NewProgram(m, tea.WithAltScreen())
