@@ -10,6 +10,19 @@ import (
 	"github.com/mph-llm-experiments/tinycrawl-tui/internal/types"
 )
 
+// SwapItemMsg tells root to drop an inventory item and take a loot item.
+type SwapItemMsg struct {
+	DropSlot  int
+	TakeIndex int
+}
+
+// lootChoice represents one selectable option during looting.
+type lootChoice struct {
+	label     string
+	takeIndex int  // -1 for skip
+	swapSlot  int  // -1 for normal take, >=0 for swap (drop this slot first)
+}
+
 // RoomView displays room exploration and looting phases.
 type RoomView struct {
 	state     *types.GameState
@@ -31,14 +44,64 @@ func NewRoomView(state *types.GameState, cd types.ContentData, kitty bool) *Room
 
 func (v *RoomView) choiceCount() int {
 	if v.state.Phase == types.PhaseLooting {
-		// loot items + skip
-		return len(v.state.PendingLoot) + 1
+		return len(v.buildLootChoices())
 	}
 	n := len(v.state.Exits())
 	if v.canRest() {
 		n++
 	}
 	return n
+}
+
+// buildLootChoices creates the list of choices during looting, including swap options.
+func (v *RoomView) buildLootChoices() []lootChoice {
+	if v.state.Character == nil {
+		return nil
+	}
+	char := v.state.Character
+	var choices []lootChoice
+
+	for i, item := range v.state.PendingLoot {
+		canFit := engine.CanAddItem(*char, item.Slots)
+
+		// Normal take option
+		if canFit {
+			choices = append(choices, lootChoice{
+				label:     lipgloss.NewStyle().Foreground(colorLoot).Render("Take " + v.itemDetail(item)),
+				takeIndex: i,
+				swapSlot:  -1,
+			})
+		} else {
+			choices = append(choices, lootChoice{
+				label:     styleDim.Render("Take "+v.itemDetail(item)) + styleDanger.Render(" (full)"),
+				takeIndex: i,
+				swapSlot:  -1,
+			})
+		}
+
+		// Swap option: if can't fit and there's an equipped item of same type to swap
+		if !canFit && (item.Type == "weapon" || item.Type == "armor" || item.Type == "shield") {
+			for si, inv := range char.Inventory {
+				if inv != nil && inv.Type == item.Type {
+					swapLabel := lipgloss.NewStyle().Foreground(colorLoot).Render(
+						fmt.Sprintf("Swap for %s", v.itemDetail(*inv)))
+					choices = append(choices, lootChoice{
+						label:     swapLabel,
+						takeIndex: i,
+						swapSlot:  si,
+					})
+					break // one swap option per loot item
+				}
+			}
+		}
+	}
+
+	choices = append(choices, lootChoice{
+		label:     styleDim.Render("Skip"),
+		takeIndex: -1,
+		swapSlot:  -1,
+	})
+	return choices
 }
 
 func (v *RoomView) Init() tea.Cmd { return nil }
@@ -162,12 +225,24 @@ func (v *RoomView) expeditionMove(dir string) tea.Cmd {
 
 func (v *RoomView) selectCurrent() tea.Cmd {
 	if v.state.Phase == types.PhaseLooting {
-		if v.cursor < len(v.state.PendingLoot) {
-			idx := v.cursor
-			return func() tea.Msg { return GameAction{Action: types.TakeItem(idx)} }
+		choices := v.buildLootChoices()
+		if v.cursor >= len(choices) {
+			return nil
 		}
-		// Last option is skip
-		return func() tea.Msg { return GameAction{Action: types.SkipLoot()} }
+		choice := choices[v.cursor]
+		if choice.takeIndex < 0 {
+			// Skip
+			return func() tea.Msg { return GameAction{Action: types.SkipLoot()} }
+		}
+		if choice.swapSlot >= 0 {
+			// Swap: drop old, then take new
+			slot := choice.swapSlot
+			idx := choice.takeIndex
+			return func() tea.Msg { return SwapItemMsg{DropSlot: slot, TakeIndex: idx} }
+		}
+		// Normal take
+		idx := choice.takeIndex
+		return func() tea.Msg { return GameAction{Action: types.TakeItem(idx)} }
 	}
 
 	exits := v.state.Exits()
@@ -175,7 +250,6 @@ func (v *RoomView) selectCurrent() tea.Cmd {
 		idx := v.cursor
 		return func() tea.Msg { return GameAction{Action: types.ChooseExit(idx)} }
 	}
-	// Last option is rest (if available)
 	if v.canRest() {
 		return func() tea.Msg { return GameAction{Action: types.Rest()} }
 	}
@@ -283,12 +357,11 @@ func (v *RoomView) renderExits(exits []types.ExitDef) string {
 }
 
 func (v *RoomView) renderLoot() string {
+	choices := v.buildLootChoices()
 	var lines []string
-	lines = append(lines, lipgloss.NewStyle().Foreground(colorLoot).Render("You find:"))
-	for i, item := range v.state.PendingLoot {
-		lines = append(lines, v.choiceLine(i, lipgloss.NewStyle().Foreground(colorLoot).Render(v.itemDetail(item))))
+	for i, c := range choices {
+		lines = append(lines, v.choiceLine(i, c.label))
 	}
-	lines = append(lines, v.choiceLine(len(v.state.PendingLoot), styleDim.Render("Skip")))
 	return strings.Join(lines, "\n")
 }
 

@@ -86,6 +86,23 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		initCmd := m.ActiveView.Init()
 		return m, initCmd
 
+	case SwapItemMsg:
+		// Drop the old item, then take the loot item
+		s1 := engine.Dispatch(&m.State, types.DropItem(msg.DropSlot), m.Content)
+		m.State = *s1
+		s2 := engine.Dispatch(&m.State, types.TakeItem(msg.TakeIndex), m.Content)
+		oldPhase := m.State.Phase
+		m.State = *s2
+		if m.State.Phase != oldPhase {
+			m.ActiveView = m.viewForPhase(m.State.Phase)
+			initCmd := m.ActiveView.Init()
+			if initCmd != nil {
+				return m, initCmd
+			}
+		} else {
+			m.refreshViewState()
+		}
+
 	case GameAction:
 		oldPhase := m.State.Phase
 		newState := engine.Dispatch(&m.State, msg.Action, m.Content)
