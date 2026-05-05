@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mph-llm-experiments/tinycrawl-tui/internal/client"
 	"github.com/mph-llm-experiments/tinycrawl-tui/internal/types"
 )
@@ -97,85 +98,66 @@ func (v *DeathView) View() string {
 }
 
 func (v *DeathView) deathView() string {
-	var sb strings.Builder
+	center := lipgloss.NewStyle().Width(contentWidth - 4).Align(lipgloss.Center)
+	var sections []string
 
-	// Headline
-	sb.WriteString(styleDanger.Render("YOU HAVE FALLEN"))
-	sb.WriteString("\n\n")
+	// Headline — bold, centered
+	sections = append(sections, center.Render(
+		lipgloss.NewStyle().Bold(true).Foreground(colorDanger).Render("YOU HAVE FALLEN")))
+	sections = append(sections, "")
+
+	// What killed me
+	if len(v.state.Log) > 0 {
+		lastLog := v.state.Log[len(v.state.Log)-1]
+		sections = append(sections, center.Render(styleDim.Render(lastLog.Text)))
+		sections = append(sections, "")
+	}
 
 	// Character info
 	if v.state.Character != nil {
 		c := v.state.Character
-		sb.WriteString(styleTitle.Render(c.Name))
-		sb.WriteString("\n")
-		sb.WriteString(styleStat.Render(fmt.Sprintf(
+		sections = append(sections, center.Render(styleTitle.Render(c.Name)))
+		sections = append(sections, center.Render(styleStat.Render(fmt.Sprintf(
 			"STR %d  DEX %d  WIL %d  HP %d/%d  Armor %d",
-			c.Str, c.Dex, c.Wil, c.HP, c.MaxHP, c.Armor,
-		)))
-		sb.WriteString("\n\n")
+			c.Str, c.Dex, c.Wil, c.HP, c.MaxHP, c.Armor))))
+		sections = append(sections, "")
 	}
 
-	// Run stats
-	sb.WriteString(styleLabel.Render("Depth reached: "))
-	sb.WriteString(styleStat.Render(fmt.Sprintf("%d", v.state.Depth())))
-	sb.WriteString("\n")
-	sb.WriteString(styleLabel.Render("Monsters killed: "))
-	sb.WriteString(styleStat.Render(fmt.Sprintf("%d", v.state.MonstersKilled)))
-	sb.WriteString("\n\n")
+	// Run stats — centered
+	sections = append(sections, center.Render(
+		styleLabel.Render("Depth reached: ")+styleStat.Render(fmt.Sprintf("%d", v.state.Depth()))))
+	sections = append(sections, center.Render(
+		styleLabel.Render("Monsters killed: ")+styleStat.Render(fmt.Sprintf("%d", v.state.MonstersKilled))))
 
-	// Final combat log entries
-	if v.state.Combat != nil && len(v.state.Combat.Log) > 0 {
-		sb.WriteString(styleLabel.Render("Final moments:"))
-		sb.WriteString("\n")
-		logEntries := v.state.Combat.Log
-		start := 0
-		if len(logEntries) > 5 {
-			start = len(logEntries) - 5
-		}
-		for _, entry := range logEntries[start:] {
-			sb.WriteString(styleDim.Render("  " + entry))
-			sb.WriteString("\n")
-		}
-		sb.WriteString("\n")
-	}
-
-	return styleBox.Render(sb.String())
+	return styleBox.Render(strings.Join(sections, "\n"))
 }
 
 func (v *DeathView) victoryView() string {
-	var sb strings.Builder
+	center := lipgloss.NewStyle().Width(contentWidth - 4).Align(lipgloss.Center)
+	var sections []string
 
-	// Headline
-	sb.WriteString(styleTitle.Render("YOU SURVIVED"))
-	sb.WriteString("\n")
-	sb.WriteString(styleDim.Render("~ * ~ * ~ * ~"))
-	sb.WriteString("\n\n")
+	sections = append(sections, center.Render(
+		lipgloss.NewStyle().Bold(true).Foreground(colorName).Render("YOU SURVIVED")))
+	sections = append(sections, center.Render(styleDim.Render("~ * ~ * ~ * ~")))
+	sections = append(sections, "")
 
-	// Character info
 	if v.state.Character != nil {
 		c := v.state.Character
-		sb.WriteString(styleTitle.Render(c.Name))
-		sb.WriteString("\n")
-		sb.WriteString(styleStat.Render(fmt.Sprintf(
+		sections = append(sections, center.Render(styleTitle.Render(c.Name)))
+		sections = append(sections, center.Render(styleStat.Render(fmt.Sprintf(
 			"STR %d  DEX %d  WIL %d  HP %d/%d  Armor %d",
-			c.Str, c.Dex, c.Wil, c.HP, c.MaxHP, c.Armor,
-		)))
-		sb.WriteString("\n\n")
+			c.Str, c.Dex, c.Wil, c.HP, c.MaxHP, c.Armor))))
+		sections = append(sections, "")
 	}
 
-	// Run stats
-	sb.WriteString(styleLabel.Render("Rooms explored: "))
-	sb.WriteString(styleStat.Render(fmt.Sprintf("%d", v.state.RoomsVisited())))
-	sb.WriteString("\n")
-	sb.WriteString(styleLabel.Render("Monsters killed: "))
-	sb.WriteString(styleStat.Render(fmt.Sprintf("%d", v.state.MonstersKilled)))
-	sb.WriteString("\n\n")
+	sections = append(sections, center.Render(
+		styleLabel.Render("Rooms explored: ")+styleStat.Render(fmt.Sprintf("%d", v.state.RoomsVisited()))))
+	sections = append(sections, center.Render(
+		styleLabel.Render("Monsters killed: ")+styleStat.Render(fmt.Sprintf("%d", v.state.MonstersKilled))))
+	sections = append(sections, "")
+	sections = append(sections, center.Render(styleDim.Render("~ * ~ * ~ * ~")))
 
-	// Decorative flourish
-	sb.WriteString(styleDim.Render("~ * ~ * ~ * ~"))
-	sb.WriteString("\n")
-
-	return styleBox.Render(sb.String())
+	return styleBox.Render(strings.Join(sections, "\n"))
 }
 
 func (v *DeathView) KeyHints() []KeyHint {

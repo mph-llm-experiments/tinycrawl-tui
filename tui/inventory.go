@@ -72,7 +72,7 @@ func (v *InventoryView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if v.cursor < len(v.items)-1 {
 				v.cursor++
 			}
-		case "u":
+		case "enter", " ", "u":
 			if len(v.items) > 0 && v.items[v.cursor].hasUse {
 				action := types.UseItem(v.items[v.cursor].slotIndex)
 				v.action = &action

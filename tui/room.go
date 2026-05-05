@@ -15,6 +15,7 @@ type RoomView struct {
 	state     *types.GameState
 	cd        types.ContentData
 	kitty     bool
+	cursor    int
 	inventory *InventoryView
 	mapView   *MapView
 }
@@ -26,6 +27,18 @@ func NewRoomView(state *types.GameState, cd types.ContentData, kitty bool) *Room
 		cd:    cd,
 		kitty: kitty,
 	}
+}
+
+func (v *RoomView) choiceCount() int {
+	if v.state.Phase == types.PhaseLooting {
+		// loot items + skip
+		return len(v.state.PendingLoot) + 1
+	}
+	n := len(v.state.Exits())
+	if v.canRest() {
+		n++
+	}
+	return n
 }
 
 func (v *RoomView) Init() tea.Cmd { return nil }
@@ -65,7 +78,7 @@ func (v *RoomView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch msg.String() {
-			case "i", "p", "esc":
+			case "p", "esc":
 				v.inventory = nil
 				return v, nil
 			}
@@ -84,50 +97,89 @@ func (v *RoomView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		count := v.choiceCount()
 		switch msg.String() {
+		case "up", "left", "k":
+			if count > 0 {
+				v.cursor = (v.cursor - 1 + count) % count
+			}
+			return v, nil
+		case "down", "right", "j":
+			if count > 0 {
+				v.cursor = (v.cursor + 1) % count
+			}
+			return v, nil
+		case "enter", " ":
+			return v, v.selectCurrent()
+		case "s":
+			if v.state.Phase == types.PhaseLooting {
+				return v, func() tea.Msg { return GameAction{Action: types.SkipLoot()} }
+			}
+		case "n":
+			if v.state.Expedition != nil {
+				return v, v.expeditionMove("n")
+			}
+		case "e":
+			if v.state.Expedition != nil {
+				return v, v.expeditionMove("e")
+			}
+		case "w":
+			if v.state.Expedition != nil {
+				return v, v.expeditionMove("w")
+			}
+		// "s" handled above for skip loot; expedition south via arrow keys or map
 		case "m":
 			if v.state.Expedition != nil {
 				v.mapView = NewMapView(v.state.Expedition, v.state.Light)
 			}
 			return v, nil
-		case "i", "p":
+		case "p":
 			if v.state.Character != nil {
 				v.inventory = NewInventoryView(v.state.Character)
 			}
 			return v, nil
+		case "r":
+			if v.canRest() {
+				return v, func() tea.Msg { return GameAction{Action: types.Rest()} }
+			}
+			return v, nil
 		case "q":
 			return v, tea.Quit
-		case "z":
-			if v.canRest() {
-				return v, func() tea.Msg {
-					return GameAction{Action: types.Rest()}
-				}
-			}
-		case "s":
-			if v.state.Phase == types.PhaseLooting {
-				return v, func() tea.Msg {
-					return GameAction{Action: types.SkipLoot()}
-				}
-			}
-		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			idx := int(msg.String()[0]-'0') - 1
-			if v.state.Phase == types.PhaseLooting {
-				if idx < len(v.state.PendingLoot) {
-					return v, func() tea.Msg {
-						return GameAction{Action: types.TakeItem(idx)}
-					}
-				}
-			} else {
-				exits := v.state.Exits()
-				if idx < len(exits) {
-					return v, func() tea.Msg {
-						return GameAction{Action: types.ChooseExit(idx)}
-					}
-				}
-			}
 		}
 	}
 	return v, nil
+}
+
+func (v *RoomView) expeditionMove(dir string) tea.Cmd {
+	for i, exit := range v.state.Exits() {
+		if exit.Direction == dir {
+			idx := i
+			return func() tea.Msg { return GameAction{Action: types.ChooseExit(idx)} }
+		}
+	}
+	return nil
+}
+
+func (v *RoomView) selectCurrent() tea.Cmd {
+	if v.state.Phase == types.PhaseLooting {
+		if v.cursor < len(v.state.PendingLoot) {
+			idx := v.cursor
+			return func() tea.Msg { return GameAction{Action: types.TakeItem(idx)} }
+		}
+		// Last option is skip
+		return func() tea.Msg { return GameAction{Action: types.SkipLoot()} }
+	}
+
+	exits := v.state.Exits()
+	if v.cursor < len(exits) {
+		idx := v.cursor
+		return func() tea.Msg { return GameAction{Action: types.ChooseExit(idx)} }
+	}
+	// Last option is rest (if available)
+	if v.canRest() {
+		return func() tea.Msg { return GameAction{Action: types.Rest()} }
+	}
+	return nil
 }
 
 func (v *RoomView) View() string {
@@ -144,56 +196,57 @@ func (v *RoomView) View() string {
 	}
 
 	var sections []string
-
-	// Room header: depth and name
-	header := v.renderHeader(room)
-	sections = append(sections, header)
-
-	// Light band
 	band := types.GetLightBand(v.state.Light)
-	bandLabel := styleDim.Render("(" + string(band) + ")")
-	sections = append(sections, bandLabel)
+
+	// Room header (centered)
+	depth := v.state.Depth()
+	total := v.state.TotalRooms()
+	center := lipgloss.NewStyle().Width(contentWidth - 4).Align(lipgloss.Center)
+	sections = append(sections, center.Render(
+		styleDim.Render(fmt.Sprintf("%d/%d", depth, total))+" "+styleTitle.Render(room.Name)))
+
+	// Equipped weapon
+	if v.state.Character != nil {
+		for _, item := range v.state.Character.Inventory {
+			if item != nil && item.Type == "weapon" {
+				sections = append(sections, center.Render(
+					styleDim.Render(fmt.Sprintf("wielding %s (%s)", item.Name, item.Damage))))
+				break
+			}
+		}
+	}
 
 	// Room description (filtered by light)
 	desc := engine.GetVisibleDescription(room.Description, band)
 	if desc != "" {
+		sections = append(sections, "")
 		sections = append(sections, styleStat.Render(desc))
 	}
 
 	// Game log entries
 	if len(v.state.Log) > 0 {
-		logSection := v.renderLog()
-		sections = append(sections, logSection)
+		sections = append(sections, v.renderLog())
 	}
+
+	sections = append(sections, divider())
 
 	// Looting UI or Exits
 	if v.state.Phase == types.PhaseLooting && len(v.state.PendingLoot) > 0 {
-		lootSection := v.renderLoot()
-		sections = append(sections, lootSection)
+		sections = append(sections, v.renderLoot())
 	} else {
 		exits := v.state.Exits()
 		if len(exits) > 0 {
-			exitSection := v.renderExits(exits)
-			sections = append(sections, exitSection)
+			sections = append(sections, v.renderExits(exits))
 		}
 	}
 
-	content := strings.Join(sections, "\n\n")
-	return styleBox.Render(content)
-}
-
-func (v *RoomView) renderHeader(room *types.DungeonRoom) string {
-	depth := v.state.Depth()
-	total := v.state.TotalRooms()
-	roomNum := fmt.Sprintf("Room %d of %d", depth, total)
-	return styleDim.Render(roomNum) + " — " + styleTitle.Render(room.Name)
+	return styleBox.Render(strings.Join(sections, "\n"))
 }
 
 func (v *RoomView) renderLog() string {
 	var lines []string
 	for _, entry := range v.state.Log {
-		styled := v.styleLogEntry(entry)
-		lines = append(lines, styled)
+		lines = append(lines, v.styleLogEntry(entry))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -215,26 +268,34 @@ func (v *RoomView) styleLogEntry(entry types.LogEntry) string {
 
 func (v *RoomView) renderExits(exits []types.ExitDef) string {
 	var lines []string
-	lines = append(lines, styleLabel.Render("Exits"))
 	for i, exit := range exits {
-		line := fmt.Sprintf("  %d. %s", i+1, exit.Label)
+		label := exit.Label
 		if exit.Direction != "" && exit.Direction != exit.Label {
-			line += styleDim.Render(" — "+exit.Direction)
+			label += styleDim.Render(" — "+exit.Direction)
 		}
-		lines = append(lines, styleStat.Render(line))
+		lines = append(lines, v.choiceLine(i, styleStat.Render(label)))
+	}
+	if v.canRest() {
+		lines = append(lines, v.choiceLine(len(exits), styleLabel.Render("Rest")))
 	}
 	return strings.Join(lines, "\n")
 }
 
 func (v *RoomView) renderLoot() string {
 	var lines []string
-	lines = append(lines, styleLabel.Render("Loot"))
+	lines = append(lines, lipgloss.NewStyle().Foreground(colorLoot).Render("You find:"))
 	for i, item := range v.state.PendingLoot {
-		detail := v.itemDetail(item)
-		line := fmt.Sprintf("  %d. %s", i+1, detail)
-		lines = append(lines, lipgloss.NewStyle().Foreground(colorLoot).Render(line))
+		lines = append(lines, v.choiceLine(i, lipgloss.NewStyle().Foreground(colorLoot).Render(v.itemDetail(item))))
 	}
+	lines = append(lines, v.choiceLine(len(v.state.PendingLoot), styleDim.Render("Skip")))
 	return strings.Join(lines, "\n")
+}
+
+func (v *RoomView) choiceLine(index int, label string) string {
+	if index == v.cursor {
+		return styleTitle.Render("▸ ") + lipgloss.NewStyle().Bold(true).Render(label)
+	}
+	return styleDim.Render("  ") + label
 }
 
 func (v *RoomView) itemDetail(item types.Item) string {
@@ -272,26 +333,16 @@ func (v *RoomView) KeyHints() []KeyHint {
 		return v.inventory.KeyHints()
 	}
 
-	var hints []KeyHint
-	if v.state.Phase == types.PhaseLooting {
-		hints = append(hints, KeyHint{Key: "1-9", Desc: "take"})
-		hints = append(hints, KeyHint{Key: "s", Desc: "skip"})
-	} else {
-		exits := v.state.Exits()
-		if len(exits) > 0 {
-			if len(exits) == 1 {
-				hints = append(hints, KeyHint{Key: "1", Desc: "go"})
-			} else {
-				hints = append(hints, KeyHint{Key: fmt.Sprintf("1-%d", len(exits)), Desc: "exit"})
-			}
-		}
-	}
-	hints = append(hints, KeyHint{Key: "i", Desc: "inventory"})
-	if v.state.Expedition != nil {
-		hints = append(hints, KeyHint{Key: "m", Desc: "map"})
+	hints := []KeyHint{
+		{Key: "↑↓", Desc: "choose"},
+		{Key: "enter", Desc: "select"},
+		{Key: "p", Desc: "pack"},
 	}
 	if v.canRest() {
-		hints = append(hints, KeyHint{Key: "z", Desc: "rest"})
+		hints = append(hints, KeyHint{Key: "r", Desc: "rest"})
+	}
+	if v.state.Expedition != nil {
+		hints = append(hints, KeyHint{Key: "m", Desc: "map"})
 	}
 	hints = append(hints, KeyHint{Key: "q", Desc: "quit"})
 	return hints

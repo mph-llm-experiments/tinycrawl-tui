@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mph-llm-experiments/tinycrawl-tui/internal/client"
 	"github.com/mph-llm-experiments/tinycrawl-tui/internal/gm"
 	kittyPkg "github.com/mph-llm-experiments/tinycrawl-tui/internal/kitty"
@@ -36,6 +37,7 @@ type CombatView struct {
 	client    *client.Client
 	pack      types.ContentPack
 	kitty     bool
+	cursor    int
 	inventory *InventoryView
 
 	subState  combatSubState
@@ -101,23 +103,46 @@ func (v *CombatView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
+func (v *CombatView) combatActions() []combatAction {
+	actions := []combatAction{
+		{label: "Attack", action: types.AttackAction()},
+		{label: "Flee", action: types.FleeAction()},
+	}
+	if !v.state.IsFinalRoom() {
+		actions = append(actions, combatAction{label: "Run past", action: types.RunPast()})
+	}
+	actions = append(actions, combatAction{label: "Creative action", creative: true})
+	return actions
+}
+
+type combatAction struct {
+	label     string
+	action    types.Action
+	creative  bool
+	inventory bool
+}
+
 func (v *CombatView) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
+	actions := v.combatActions()
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "up", "left", "k":
+			v.cursor = (v.cursor - 1 + len(actions)) % len(actions)
+			return v, nil
+		case "down", "right", "j":
+			v.cursor = (v.cursor + 1) % len(actions)
+			return v, nil
+		case "enter", " ":
+			return v.selectCombatAction(actions[v.cursor])
+		// Letter shortcuts (match web app)
 		case "a":
-			return v, func() tea.Msg {
-				return GameAction{Action: types.AttackAction()}
-			}
+			return v, func() tea.Msg { return GameAction{Action: types.AttackAction()} }
 		case "f":
-			return v, func() tea.Msg {
-				return GameAction{Action: types.FleeAction()}
-			}
+			return v, func() tea.Msg { return GameAction{Action: types.FleeAction()} }
 		case "r":
 			if !v.state.IsFinalRoom() {
-				return v, func() tea.Msg {
-					return GameAction{Action: types.RunPast()}
-				}
+				return v, func() tea.Msg { return GameAction{Action: types.RunPast()} }
 			}
 		case "c":
 			v.subState = combatTextInput
@@ -125,14 +150,27 @@ func (v *CombatView) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			v.textInput.Focus()
 			v.gmError = ""
 			return v, v.textInput.Cursor.BlinkCmd()
-		case "i":
-			if v.state.Character != nil {
-				v.inventory = NewInventoryView(v.state.Character)
-			}
-			return v, nil
 		}
 	}
 	return v, nil
+}
+
+func (v *CombatView) selectCombatAction(a combatAction) (tea.Model, tea.Cmd) {
+	if a.creative {
+		v.subState = combatTextInput
+		v.textInput.Reset()
+		v.textInput.Focus()
+		v.gmError = ""
+		return v, v.textInput.Cursor.BlinkCmd()
+	}
+	if a.inventory {
+		if v.state.Character != nil {
+			v.inventory = NewInventoryView(v.state.Character)
+		}
+		return v, nil
+	}
+	action := a.action
+	return v, func() tea.Msg { return GameAction{Action: action} }
 }
 
 func (v *CombatView) updateTextInput(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -218,69 +256,31 @@ func (v *CombatView) View() string {
 		return styleDim.Render("No combat state.")
 	}
 
-	var sections []string
-
-	// Monster image using Unicode placeholders (integrates with lipgloss layout)
 	monster := v.state.Combat.Monster
 	band := types.GetLightBand(v.state.Light)
-	if v.kitty && monster.Base.Image != "" && (band == types.LightBright || band == types.LightDim) {
-		imgData := monster.Base.Image
+	m := monster.Base
+
+	var sections []string
+
+	// ── Section header ──
+	sections = append(sections, lipgloss.NewStyle().Width(contentWidth-4).Align(lipgloss.Center).
+		Render(styleDim.Render("— combat —")))
+
+	// ── Monster portrait (centered, stacked above name) ──
+	if v.kitty && m.Image != "" && (band == types.LightBright || band == types.LightDim) {
+		imgData := m.Image
 		if idx := strings.Index(imgData, ","); idx >= 0 {
 			imgData = imgData[idx+1:]
 		}
 		pngData, err := base64.StdEncoding.DecodeString(imgData)
 		if err == nil {
-			// RenderImage returns escape sequences (invisible) + Unicode placeholders
-			// (measurable cells) — safe for lipgloss layout
-			imageStr := kittyPkg.RenderImage(1, pngData, 12, 6)
-			sections = append(sections, imageStr)
+			imageStr := kittyPkg.RenderImage(1, pngData, 10, 5)
+			sections = append(sections, lipgloss.NewStyle().Width(contentWidth-4).Align(lipgloss.Center).
+				Render(imageStr))
 		}
 	}
 
-	// Monster card (text stats)
-	monsterCard := renderMonsterCard(v.state.Combat.Monster, v.state.Light)
-	sections = append(sections, monsterCard)
-
-	// Combat log
-	if len(v.state.Combat.Log) > 0 {
-		logSection := v.renderCombatLog()
-		sections = append(sections, logSection)
-	}
-
-	// GM error (if any)
-	if v.gmError != "" {
-		errLine := styleDanger.Render("GM Error: " + v.gmError)
-		sections = append(sections, errLine)
-	}
-
-	// Sub-state dependent UI
-	switch v.subState {
-	case combatTextInput:
-		inputSection := styleLabel.Render("Creative Action:") + "\n" + v.textInput.View()
-		sections = append(sections, inputSection)
-	case combatWaitingGM:
-		waitSection := v.spinner.View() + " Thinking..."
-		sections = append(sections, styleDim.Render(waitSection))
-	}
-
-	content := strings.Join(sections, "\n\n")
-	return styleBox.Render(content)
-}
-
-func (v *CombatView) renderCombatLog() string {
-	var lines []string
-	lines = append(lines, styleLabel.Render("Combat Log"))
-	for _, entry := range v.state.Combat.Log {
-		lines = append(lines, styleStat.Render("  "+entry))
-	}
-	return strings.Join(lines, "\n")
-}
-
-func renderMonsterCard(monster types.MonsterInstance, light int) string {
-	band := types.GetLightBand(light)
-	m := monster.Base
-
-	// Name
+	// ── Monster name + stats ──
 	var name string
 	switch band {
 	case types.LightBlack:
@@ -291,21 +291,62 @@ func renderMonsterCard(monster types.MonsterInstance, light int) string {
 		name = m.Name
 	}
 
-	header := styleTitle.Render("\u2620 " + name)
-
-	// Stats (only in bright/dim)
-	var stats string
+	monsterLines := []string{
+		lipgloss.NewStyle().Width(contentWidth-4).Align(lipgloss.Center).
+			Render(styleTitle.Render("\u2620 " + name)),
+	}
 	if band == types.LightBright {
-		stats = fmt.Sprintf("STR %d  DEX %d  WIL %d\nHP %d/%d  Armor %d\n%s (%s)",
-			m.Str, m.Dex, m.Wil, monster.CurrentHP, m.HP, m.Armor, m.Attack.Name, m.Attack.Die)
+		monsterLines = append(monsterLines,
+			lipgloss.NewStyle().Width(contentWidth-4).Align(lipgloss.Center).
+				Render(styleStat.Render(fmt.Sprintf("STR %d  DEX %d  WIL %d  HP %d/%d  Armor %d",
+					m.Str, m.Dex, m.Wil, monster.CurrentHP, m.HP, m.Armor))),
+			lipgloss.NewStyle().Width(contentWidth-4).Align(lipgloss.Center).
+				Render(styleDim.Render(fmt.Sprintf("%s (%s)", m.Attack.Name, m.Attack.Die))),
+		)
 		if len(m.Weaknesses) > 0 {
-			stats += "\nWeak to: " + strings.Join(m.Weaknesses, ", ")
+			monsterLines = append(monsterLines,
+				lipgloss.NewStyle().Width(contentWidth-4).Align(lipgloss.Center).
+					Render(styleDanger.Render("Weak: "+strings.Join(m.Weaknesses, ", "))))
 		}
 	} else if band == types.LightDim {
-		stats = fmt.Sprintf("HP %d/%d  Armor %d", monster.CurrentHP, m.HP, m.Armor)
+		monsterLines = append(monsterLines,
+			lipgloss.NewStyle().Width(contentWidth-4).Align(lipgloss.Center).
+				Render(styleStat.Render(fmt.Sprintf("HP %d/%d  Armor %d", monster.CurrentHP, m.HP, m.Armor))))
+	}
+	sections = append(sections, strings.Join(monsterLines, "\n"))
+
+	// ── Divider ──
+	sections = append(sections, divider())
+
+	// ── Combat log ──
+	for _, entry := range v.state.Combat.Log {
+		sections = append(sections, styleStat.Render(entry))
 	}
 
-	return header + "\n" + styleStat.Render(stats)
+	// ── Actions or creative input ──
+	sections = append(sections, divider())
+
+	switch v.subState {
+	case combatTextInput:
+		sections = append(sections, styleLabel.Render("Creative Action:"))
+		sections = append(sections, v.textInput.View())
+	case combatWaitingGM:
+		sections = append(sections, styleDim.Render(v.spinner.View()+" Thinking..."))
+	default:
+		actions := v.combatActions()
+		for i, a := range actions {
+			if i == v.cursor {
+				sections = append(sections, styleTitle.Render("▸ ")+lipgloss.NewStyle().Bold(true).Foreground(colorStat).Render(a.label))
+			} else {
+				sections = append(sections, styleDim.Render("  ")+styleStat.Render(a.label))
+			}
+		}
+	}
+	if v.gmError != "" {
+		sections = append(sections, styleDanger.Render("GM: "+v.gmError))
+	}
+
+	return styleBox.Render(strings.Join(sections, "\n"))
 }
 
 func (v *CombatView) KeyHints() []KeyHint {
@@ -325,14 +366,8 @@ func (v *CombatView) KeyHints() []KeyHint {
 		}
 	}
 
-	hints := []KeyHint{
-		{Key: "a", Desc: "attack"},
-		{Key: "f", Desc: "flee"},
+	return []KeyHint{
+		{Key: "↑↓", Desc: "choose"},
+		{Key: "enter", Desc: "select"},
 	}
-	if !v.state.IsFinalRoom() {
-		hints = append(hints, KeyHint{Key: "r", Desc: "run past"})
-	}
-	hints = append(hints, KeyHint{Key: "c", Desc: "creative"})
-	hints = append(hints, KeyHint{Key: "i", Desc: "inventory"})
-	return hints
 }

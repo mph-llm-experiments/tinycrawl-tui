@@ -14,42 +14,13 @@ type KeyHint struct {
 	Desc string
 }
 
-func renderStatusBar(state *types.GameState, online bool, width int) string {
-	if state.Character == nil {
-		return ""
-	}
-	char := state.Character
+var styleStatLabel = lipgloss.NewStyle().Foreground(colorLabel).Bold(true)
 
-	// Stats
-	stats := fmt.Sprintf("HP %d/%d  STR %d  DEX %d  WIL %d  Armor %d",
-		char.HP, char.MaxHP, char.Str, char.Dex, char.Wil, char.Armor)
+// renderLightHeader renders the light meter as a centered line above the main content.
+func renderLightHeader(light int) string {
+	band := types.GetLightBand(light)
 
-	// Light meter (10 segments)
-	lightBar := renderLightBar(state.Light)
-
-	// Online indicator
-	indicator := "○ offline"
-	if online {
-		indicator = "◉ online"
-	}
-
-	left := styleStat.Render(stats)
-	middle := lightBar
-	right := styleDim.Render(indicator)
-
-	// Arrange with spacing
-	gap := width - lipgloss.Width(left) - lipgloss.Width(middle) - lipgloss.Width(right)
-	if gap < 2 {
-		gap = 2
-	}
-	halfGap := gap / 2
-
-	return left + strings.Repeat(" ", halfGap) + middle + strings.Repeat(" ", gap-halfGap) + right
-}
-
-func renderLightBar(light int) string {
 	var bar strings.Builder
-	bar.WriteString("Light ")
 	for i := 0; i < 10; i++ {
 		if i < light {
 			bar.WriteString("█")
@@ -57,7 +28,7 @@ func renderLightBar(light int) string {
 			bar.WriteString("░")
 		}
 	}
-	band := types.GetLightBand(light)
+
 	color := colorStat
 	switch band {
 	case types.LightDim:
@@ -67,7 +38,50 @@ func renderLightBar(light int) string {
 	case types.LightBlack:
 		color = lipgloss.AdaptiveColor{Light: "#333", Dark: "#555"}
 	}
-	return lipgloss.NewStyle().Foreground(color).Render(bar.String())
+
+	meter := lipgloss.NewStyle().Foreground(color).Render(bar.String())
+	line := styleDim.Render("◈ ") + meter + styleDim.Render(" ◈")
+
+	return lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Center).Render(line)
+}
+
+// renderStatusBar renders character stats and online indicator below the main content.
+func renderStatusBar(state *types.GameState, online bool, _ int) string {
+	if state.Character == nil {
+		return ""
+	}
+	char := state.Character
+
+	// HP (danger-colored when low)
+	hp := fmt.Sprintf("%d/%d", char.HP, char.MaxHP)
+	if char.HP <= char.MaxHP/3 {
+		hp = styleDanger.Render(hp)
+	} else {
+		hp = styleStat.Render(hp)
+	}
+
+	// Stats line — centered
+	statsLine := strings.Join([]string{
+		styleStatLabel.Render("HP ") + hp,
+		styleStatLabel.Render("STR ") + styleStat.Render(fmt.Sprintf("%d", char.Str)),
+		styleStatLabel.Render("DEX ") + styleStat.Render(fmt.Sprintf("%d", char.Dex)),
+		styleStatLabel.Render("WIL ") + styleStat.Render(fmt.Sprintf("%d", char.Wil)),
+		styleStatLabel.Render("Armor ") + styleStat.Render(fmt.Sprintf("%d", char.Armor)),
+	}, "  ")
+
+	// Online indicator
+	indicator := styleDim.Render("○ offline")
+	if online {
+		indicator = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#228B22", Dark: "#66BB6A"}).Render("◉") +
+			styleDim.Render(" online")
+	}
+
+	centered := lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Center)
+
+	return strings.Join([]string{
+		centered.Render(statsLine),
+		centered.Render(indicator),
+	}, "\n\n")
 }
 
 func renderKeyHints(hints []KeyHint) string {

@@ -1,6 +1,13 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+// Content width for the main game panel — fixed to prevent resizing.
+const contentWidth = 50
 
 var (
 	colorName   = lipgloss.AdaptiveColor{Light: "#8B0000", Dark: "#FF6B6B"}
@@ -19,14 +26,22 @@ var (
 	styleBox   = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorBorder).
-			Padding(0, 1)
+			Padding(0, 1).
+			Width(contentWidth)
 	styleDanger = lipgloss.NewStyle().Foreground(colorDanger)
 	styleKey    = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.AdaptiveColor{Light: "#333", Dark: "#EEE"}).
 			Background(lipgloss.AdaptiveColor{Light: "#DDD", Dark: "#444"}).
 			Padding(0, 1)
+
+	// Section divider within a panel
+	styleDivider = lipgloss.NewStyle().Foreground(colorBorder)
 )
+
+func divider() string {
+	return styleDivider.Render(strings.Repeat("─", contentWidth-4))
+}
 
 // Exported style accessors for use by phase views in other packages.
 

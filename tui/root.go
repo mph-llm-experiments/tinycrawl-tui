@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mph-llm-experiments/tinycrawl-tui/internal/client"
@@ -112,50 +114,43 @@ func (m RootModel) View() string {
 		return ""
 	}
 
-	// Main content
-	var mainContent string
-	if m.ActiveView != nil {
-		mainContent = m.ActiveView.View()
+	inGame := m.State.Phase == types.PhaseExploring || m.State.Phase == types.PhaseCombat ||
+		m.State.Phase == types.PhaseLooting
+
+	var column []string
+
+	// Light meter at the top during gameplay
+	if inGame {
+		column = append(column, renderLightHeader(m.State.Light))
+		column = append(column, "") // breathing room
 	}
 
-	// Status bar (only during gameplay phases)
-	var statusBar string
-	var keyHints string
-	if m.State.Phase == types.PhaseExploring || m.State.Phase == types.PhaseCombat ||
-		m.State.Phase == types.PhaseLooting {
-		statusBar = renderStatusBar(&m.State, m.Online, m.Width)
-	}
+	// Main content
 	if m.ActiveView != nil {
-		hints := m.ActiveView.KeyHints()
-		if len(hints) > 0 {
-			keyHints = renderKeyHints(hints)
+		column = append(column, m.ActiveView.View())
+	}
+
+	// Stats + online below content during gameplay
+	if inGame {
+		column = append(column, "") // breathing room
+		bar := renderStatusBar(&m.State, m.Online, m.Width)
+		if bar != "" {
+			column = append(column, bar)
 		}
 	}
 
-	// Layout: content centered, status bar and hints at bottom
-	contentHeight := m.Height - 2 // reserve for status + hints
-	if statusBar != "" {
-		contentHeight--
-	}
-	if keyHints != "" {
-		contentHeight--
-	}
-	_ = contentHeight // will be used for viewport clipping in later tasks
-
-	// Center content horizontally
-	centered := lipgloss.NewStyle().Width(m.Width).Align(lipgloss.Center).Render(mainContent)
-
-	// Build final layout
-	result := centered
-	if statusBar != "" {
-		result += "\n" + statusBar
-	}
-	if keyHints != "" {
-		hintsCentered := lipgloss.NewStyle().Width(m.Width).Align(lipgloss.Center).Render(keyHints)
-		result += "\n" + hintsCentered
+	// Key hints
+	if m.ActiveView != nil {
+		hints := m.ActiveView.KeyHints()
+		if len(hints) > 0 {
+			column = append(column, "") // breathing room
+			column = append(column, lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Center).
+				Render(renderKeyHints(hints)))
+		}
 	}
 
-	return result
+	block := strings.Join(column, "\n")
+	return lipgloss.NewStyle().Width(m.Width).Align(lipgloss.Center).Render(block)
 }
 
 func (m RootModel) viewForPhase(phase types.GamePhase) PhaseView {
